@@ -1,60 +1,69 @@
 pub struct Crc8 {
-        table : [u8; 256]
+    table: [u8; 256],
 }
 
 impl Crc8 {
-        pub fn create_msb(polynomial : u8) -> Crc8 {
-                let msbit : u8 = 0x80;
-                let mut t : u8 = msbit;
-                let mut tmp : u8;
-                let mut i : u32 = 1;
-                let mut idx : u8;
-                let mut table : [u8; 256] = [0; 256];
+    pub fn with_msb(poly: u8) -> Crc8 {
+        const MSB: u8 = 0x80;
 
-                while i < 256 {
-                        if t & msbit != 0 { tmp = polynomial; } else { tmp = 0; }
-                        t = (t << 1) ^ tmp;
-                        for j in 0..i {
-                                idx = (i+j) as u8;
-                                table[(idx) as usize] =  table[j as usize] ^ t;
-                        }
-                        i *= 2;
-                }
+        let mut c = unsafe {
+            Self {
+                table: std::mem::uninitialized(),
+            }
+        };
+        c.table[0] = 0;
 
-                return Crc8{ table : table};
+        let mut t = MSB;
+        let mut i = 1;
+        while i < c.table.len() {
+            t = (t << 1) ^ (if t & MSB != 0 { poly } else { 0 });
+            for j in 0..i {
+                c.table[i + j] = c.table[j] ^ t;
+            }
+            i <<= 1;
         }
+        c
+    }
 
-        pub fn create_lsb(polynomial :u8) -> Crc8 {
-                let mut i :u32 = 0xff;
-                let mut j :u32;
-                let mut t :u8 = 1;
-                let mut tmp :u8;
-                let mut idx :u8;
-                let mut table : [u8; 256] = [0; 256];
+    pub fn with_lsb(poly: u8) -> Crc8 {
+        let mut c = unsafe {
+            Self {
+                table: std::mem::uninitialized(),
+            }
+        };
+        c.table[0] = 0;
 
-                while i != 0 {
-                        if t & 1 != 0 { tmp = polynomial; } else { tmp = 0; }
-                        t = (t >> 1) ^ tmp;
-                        j = 0;
-                        while j < 256 {
-                                idx = (i+j) as u8;
-                                table[idx as usize] = table[j as usize] ^ t;
-                                j += 2 * i;
-                        }
-                        i >>= 1;
-                }
+        let mut t = 1u8;
+        let mut i = c.table.len() >> 1;
+        while i > 0 {
+            t = (t >> 1) ^ (if t & 1 != 0 { poly } else { 0 });
 
-                return Crc8{ table : table };
+            let mut j = 0;
+            while j < c.table.len() {
+                c.table[i + j] = c.table[j] ^ t;
+                j += i << 1;
+            }
+            i >>= 1;
         }
+        c
+    }
 
-        pub fn calc(&mut self, buffer : &[u8], length: i32, crc: u8) -> u8 {
-                let mut i : i32 = 0;
-                let mut crc_tmp = crc;
 
-                while i < length {
-                        crc_tmp = self.table[((crc_tmp ^ buffer[i as usize]) as u8) as usize];
-                        i+=1;
-                }
-                return crc_tmp;
+    pub fn calc(&self, buffer: &[u8], crc: u8) -> u8 {
+        let mut crc_tmp = crc;
+        for byte in buffer {
+            crc_tmp = self.table[(crc_tmp ^ byte) as usize];
         }
+        crc_tmp
+    }
+}
+
+
+#[test]
+fn test_msb() {
+    assert_eq!(Crc8::with_msb(0x7).calc(b"test", 0), 0xB9);
+}
+#[test]
+fn test_lsb() {
+    assert_eq!(Crc8::with_lsb(0x7).calc(b"test", 0), 0x07);
 }
